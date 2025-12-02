@@ -1,19 +1,27 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["./app/**/*.{js,jsx,ts,tsx}", "./components/**/*.{js,jsx,ts,tsx}"],
+  content: [
+    "./app/**/*.{js,jsx,ts,tsx}",
+    "./src/**/*.{js,jsx,ts,tsx}",
+    "./components/**/*.{js,jsx,ts,tsx}"
+  ],
   presets: [require("nativewind/preset")],
   theme: {
     extend: {
       colors: {
-        void: "#0A0F1B",
-        starlight: "#E2C88C",
-        mana: "#8AD4E6",
-        arcane: "#9D4EDD",
-        parchment: "#151B2E",
+        background: "#F8FAFC", // Slate 50
+        surface: "#FFFFFF",
+        primary: "#2563EB", // Blue 600
+        secondary: "#E2E8F0", // Slate 200
+        text: "#0F172A", // Slate 900
+        "text-secondary": "#64748B", // Slate 500
+        success: "#10B981", // Emerald 500
+        error: "#EF4444", // Red 500
+        warning: "#F59E0B", // Amber 500
       },
       fontFamily: {
-        serif: ["CormorantGaramond_400Regular", "serif"],
-        sans: ["Inter_400Regular", "sans-serif"],
+        sans: ["System"],
+        bold: ["System"],
       },
     },
   },

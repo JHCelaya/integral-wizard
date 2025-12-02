@@ -4,32 +4,33 @@ interface ProgressBarProps {
     current: number;
     max: number;
     label?: string;
-    color?: "mana" | "arcane" | "starlight";
+    color?: "primary" | "success" | "warning" | "error";
 }
 
 export function ProgressBar({
     current,
     max,
     label,
-    color = "mana"
+    color = "primary"
 }: ProgressBarProps) {
     const percentage = Math.min((current / max) * 100, 100);
 
     const colorClasses = {
-        mana: "bg-mana",
-        arcane: "bg-arcane",
-        starlight: "bg-starlight",
+        primary: "bg-primary",
+        success: "bg-success",
+        warning: "bg-warning",
+        error: "bg-error",
     };
 
     return (
         <View className="w-full">
             {label && (
                 <View className="flex-row justify-between mb-2">
-                    <Text className="text-starlight text-sm font-serif">{label}</Text>
-                    <Text className="text-gray-400 text-sm">{current} / {max}</Text>
+                    <Text className="text-text font-medium text-sm">{label}</Text>
+                    <Text className="text-text-secondary text-sm">{current} / {max}</Text>
                 </View>
             )}
-            <View className="w-full h-3 bg-void/50 rounded-full overflow-hidden border border-starlight/20">
+            <View className="w-full h-2 bg-secondary rounded-full overflow-hidden">
                 <View
                     className={`h-full ${colorClasses[color]} rounded-full`}
                     style={{ width: `${percentage}%` }}

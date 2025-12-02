@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function TabsLayout() {
     return (
@@ -7,29 +7,56 @@ export default function TabsLayout() {
             screenOptions={{
                 headerShown: false,
                 tabBarStyle: {
-                    backgroundColor: "#0A0F1B", // void
-                    borderTopColor: "#E2C88C", // starlight
+                    backgroundColor: "#FFFFFF",
+                    borderTopColor: "#E2E8F0",
                     borderTopWidth: 1,
+                    height: 60,
+                    paddingBottom: 8,
+                    paddingTop: 8,
                 },
-                tabBarActiveTintColor: "#E2C88C", // starlight
-                tabBarInactiveTintColor: "#3F4471", // secondary
+                tabBarActiveTintColor: "#2563EB", // primary
+                tabBarInactiveTintColor: "#64748B", // text-secondary
+                tabBarLabelStyle: {
+                    fontFamily: "Inter_400Regular",
+                    fontSize: 12,
+                }
             }}
         >
             <Tabs.Screen
-                name="observatory"
-                options={{ title: "Observatory" }}
+                name="index"
+                options={{
+                    title: "Home",
+                    tabBarIcon: ({ color, focused }) => (
+                        <Ionicons name={focused ? "home" : "home-outline"} size={24} color={color} />
+                    )
+                }}
             />
             <Tabs.Screen
-                name="library"
-                options={{ title: "Library" }}
+                name="practice"
+                options={{
+                    title: "Practice",
+                    tabBarIcon: ({ color, focused }) => (
+                        <Ionicons name={focused ? "school" : "school-outline"} size={24} color={color} />
+                    )
+                }}
             />
             <Tabs.Screen
-                name="training"
-                options={{ title: "Training" }}
+                name="stats"
+                options={{
+                    title: "Stats",
+                    tabBarIcon: ({ color, focused }) => (
+                        <Ionicons name={focused ? "stats-chart" : "stats-chart-outline"} size={24} color={color} />
+                    )
+                }}
             />
             <Tabs.Screen
-                name="tome"
-                options={{ title: "Tome" }}
+                name="lessons"
+                options={{
+                    title: "Lessons",
+                    tabBarIcon: ({ color, focused }) => (
+                        <Ionicons name={focused ? "book" : "book-outline"} size={24} color={color} />
+                    )
+                }}
             />
         </Tabs>
     );
