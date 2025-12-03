@@ -9,7 +9,12 @@ export class ProgressTracker {
         hintsUsed: number,
         isCorrect: boolean
     ): Promise<{ xpEarned: number; newTotalXP: number }> {
-        const xpEarned = XPCalculator.calculateProblemXP(problem, timeSpentSeconds, hintsUsed, isCorrect);
+        const xpEarned = XPCalculator.calculateProblemXP(
+            problem.difficulty,
+            isCorrect,
+            1, // numAttempts (default 1 for legacy)
+            hintsUsed
+        );
 
         // 1. Record history
         await dbManager.runQuery(
@@ -38,6 +43,9 @@ export class ProgressTracker {
          WHERE id = 1`, // Assuming single user for now
                 [xpEarned]
             );
+
+            // 4. Update Mastery Score (MVP)
+            await this.updateMastery(problem.category_id);
 
             // Update accuracy (simplified calculation for now, ideally should recount)
             // For MVP we might just increment counts. 
@@ -69,5 +77,34 @@ export class ProgressTracker {
 
     static async getUserProfile() {
         return await dbManager.getFirst('SELECT * FROM user_profile WHERE id = 1');
+    }
+
+    static async updateMastery(categoryId: number) {
+        // 1. Get counts by difficulty for correct answers
+        const results = await dbManager.getAll(
+            `SELECT p.difficulty, COUNT(*) as count
+             FROM problem_history ph
+             JOIN problems p ON ph.problem_id = p.id
+             WHERE p.category_id = ? AND ph.completed = 1
+             GROUP BY p.difficulty`,
+            [categoryId]
+        );
+
+        // 2. Calculate Score
+        let score = 0;
+        for (const row of results as any[]) {
+            const count = row.count;
+            if (row.difficulty === 'easy') score += count * 1;
+            if (row.difficulty === 'medium') score += count * 3;
+            if (row.difficulty === 'hard') score += count * 5;
+        }
+
+        // 3. Update Category Progress
+        await dbManager.runQuery(
+            `UPDATE category_progress 
+             SET mastery_level = ?
+             WHERE category_id = ?`,
+            [score, categoryId]
+        );
     }
 }

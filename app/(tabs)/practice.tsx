@@ -1,25 +1,36 @@
-import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, Alert, TextInput } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
-import { ProblemSelector } from "../../src/services/ProblemSelector";
 import { Problem } from "../../src/models/types";
 import MathRenderer from "../../src/components/MathRenderer";
-import { ProgressTracker } from "../../src/services/ProgressTracker";
+import { PracticeService } from "../../src/services/PracticeService";
+import { QuestionGenerator } from "../../src/services/QuestionGenerator";
+import { useUserStore } from "../../store/useUserStore";
 
-type Stage = 'config' | 'solving' | 'feedback' | 'summary';
+type Stage = 'config' | 'solving' | 'summary';
+
+const SKILLS = [
+    { id: 'SUBSTITUTION', name: 'Substitution' },
+    { id: 'INTEGRATION_BY_PARTS', name: 'Integration by Parts' },
+    { id: 'TRIG_INTEGRALS', name: 'Trig Integrals' },
+    { id: 'TRIG_SUBSTITUTION', name: 'Trig Substitution' },
+    { id: 'PARTIAL_FRACTIONS', name: 'Partial Fractions' },
+    { id: 'IMPROPER_INTEGRALS', name: 'Improper Integrals' },
+];
 
 export default function Practice() {
     const params = useLocalSearchParams();
-    const initialCategoryId = params.categoryId ? Number(params.categoryId) : null;
+    const initialSkillId = params.skillId as string || null;
+    const { refreshStats } = useUserStore();
 
     const [stage, setStage] = useState<Stage>('config');
-    const [categoryId, setCategoryId] = useState<number | null>(initialCategoryId);
-    const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
-    const [setSize, setSetSize] = useState(5);
+    const [skillId, setSkillId] = useState<string | null>(initialSkillId);
+    const [difficulty, setDifficulty] = useState<'EASY' | 'MEDIUM' | 'HARD'>('MEDIUM');
+    const [setSize, setSetSize] = useState<'SMALL' | 'MEDIUM' | 'LARGE'>('SMALL');
 
     const [problems, setProblems] = useState<Problem[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -29,14 +40,16 @@ export default function Practice() {
     const [timer, setTimer] = useState(0);
     const [isTimerRunning, setIsTimerRunning] = useState(false);
     const [showSolution, setShowSolution] = useState(false);
+    const [attemptsCount, setAttemptsCount] = useState(0);
+    const [userAnswer, setUserAnswer] = useState('');
 
     const [results, setResults] = useState<{ correct: number, xp: number }>({ correct: 0, xp: 0 });
 
     useEffect(() => {
-        if (initialCategoryId) {
-            setCategoryId(initialCategoryId);
+        if (initialSkillId) {
+            setSkillId(initialSkillId);
         }
-    }, [initialCategoryId]);
+    }, [initialSkillId]);
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -47,28 +60,63 @@ export default function Practice() {
     }, [isTimerRunning]);
 
     const startPractice = async () => {
-        if (!categoryId) return;
-        const probs = await ProblemSelector.getProblems(categoryId, difficulty, setSize);
-        setProblems(probs);
+        if (!skillId) return;
+
+        let generatedProblems: Problem[] = [];
+        const count = setSize === 'SMALL' ? 3 : setSize === 'MEDIUM' ? 5 : 8;
+
+        if (skillId === 'SUBSTITUTION') {
+            // Use Generator
+            for (let i = 0; i < count; i++) {
+                const q = QuestionGenerator.generateEasySubstitutionQuestion();
+                generatedProblems.push({
+                    id: i, // Temp ID
+                    category_id: 0, // Not used
+                    difficulty: 'EASY', // Generator currently only does EASY
+                    problem_text: "Evaluate the integral:",
+                    problem_latex: q.integrand_tex,
+                    solution_steps: JSON.stringify([{ latex: q.solution_tex }]),
+                    hints: JSON.stringify([]),
+                    base_xp: 10,
+                    expected_time_seconds: 60,
+                    required_techniques: JSON.stringify(['SUBSTITUTION']),
+                    version: 1
+                });
+            }
+        } else {
+            // Placeholder for other skills (or fallback to empty/alert)
+            Alert.alert("Coming Soon", "Generators for this skill are not ready yet. Try Substitution!");
+            return;
+        }
+
+        setProblems(generatedProblems);
+        console.log("Generated Problems:", JSON.stringify(generatedProblems, null, 2));
         setCurrentIndex(0);
-        setCurrentProblem(probs[0]);
+        setCurrentProblem(generatedProblems[0]);
         setStage('solving');
         setTimer(0);
         setIsTimerRunning(true);
         setHintsUsed(0);
+        setAttemptsCount(1);
         setShowSolution(false);
         setResults({ correct: 0, xp: 0 });
     };
 
     const handleAnswer = async (correct: boolean) => {
         setIsTimerRunning(false);
-        if (!currentProblem) return;
+        if (!currentProblem || !skillId) return;
 
-        const { xpEarned } = await ProgressTracker.recordProblemAttempt(
-            currentProblem,
-            timer,
+        // Record Attempt
+        const { xpEarned } = await PracticeService.recordAttempt(
+            1, // Hardcoded User ID for now
+            skillId,
+            difficulty, // Use selected difficulty (even if generator is easy, for now)
+            correct,
+            attemptsCount,
             hintsUsed,
-            correct
+            undefined, // templateId
+            undefined, // assignmentId
+            undefined  // questionId
         );
 
         setResults(prev => ({
@@ -83,10 +131,34 @@ export default function Practice() {
             setTimer(0);
             setIsTimerRunning(true);
             setHintsUsed(0);
+            setAttemptsCount(1);
             setShowSolution(false);
+            setUserAnswer('');
         } else {
+            // Finish Assignment
+            const bonus = await PracticeService.applyAssignmentCompletionBonus(1, skillId, setSize);
+            setResults(prev => ({ ...prev, xp: prev.xp + bonus }));
+            refreshStats(); // Update global stats
             setStage('summary');
         }
+    };
+
+    const handleQuit = () => {
+        Alert.alert(
+            "Quit Practice?",
+            "You will lose progress for this assignment.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Quit",
+                    style: "destructive",
+                    onPress: () => {
+                        setIsTimerRunning(false);
+                        setStage('config');
+                    }
+                }
+            ]
+        );
     };
 
     const formatTime = (seconds: number) => {
@@ -102,22 +174,22 @@ export default function Practice() {
                     <Text style={styles.pageTitle}>Practice Setup</Text>
 
                     <Card style={styles.configCard}>
-                        <Text style={styles.sectionTitle}>Category</Text>
+                        <Text style={styles.sectionTitle}>Skill</Text>
                         <View style={styles.optionRow}>
-                            {[1, 2, 3, 4, 5].map(id => (
+                            {SKILLS.map(skill => (
                                 <Pressable
-                                    key={id}
-                                    onPress={() => setCategoryId(id)}
+                                    key={skill.id}
+                                    onPress={() => setSkillId(skill.id)}
                                     style={[
                                         styles.optionButton,
-                                        categoryId === id && styles.optionButtonActive
+                                        skillId === skill.id && styles.optionButtonActive
                                     ]}
                                 >
                                     <Text style={[
                                         styles.optionText,
-                                        categoryId === id && styles.optionTextActive
+                                        skillId === skill.id && styles.optionTextActive
                                     ]}>
-                                        Category {id}
+                                        {skill.name}
                                     </Text>
                                 </Pressable>
                             ))}
@@ -127,7 +199,7 @@ export default function Practice() {
                     <Card style={styles.configCard}>
                         <Text style={styles.sectionTitle}>Difficulty</Text>
                         <View style={styles.difficultyRow}>
-                            {['easy', 'medium', 'hard'].map((d) => (
+                            {['EASY', 'MEDIUM', 'HARD'].map((d) => (
                                 <Pressable
                                     key={d}
                                     onPress={() => setDifficulty(d as any)}
@@ -141,7 +213,31 @@ export default function Practice() {
                                         difficulty === d && styles.difficultyTextActive,
                                         { textTransform: 'capitalize' }
                                     ]}>
-                                        {d}
+                                        {d.toLowerCase()}
+                                    </Text>
+                                </Pressable>
+                            ))}
+                        </View>
+                    </Card>
+
+                    <Card style={styles.configCard}>
+                        <Text style={styles.sectionTitle}>Assignment Size</Text>
+                        <View style={styles.difficultyRow}>
+                            {['SMALL', 'MEDIUM', 'LARGE'].map((s) => (
+                                <Pressable
+                                    key={s}
+                                    onPress={() => setSetSize(s as any)}
+                                    style={[
+                                        styles.difficultyButton,
+                                        setSize === s && styles.difficultyButtonActive
+                                    ]}
+                                >
+                                    <Text style={[
+                                        styles.difficultyText,
+                                        setSize === s && styles.difficultyTextActive,
+                                        { textTransform: 'capitalize' }
+                                    ]}>
+                                        {s.toLowerCase()}
                                     </Text>
                                 </Pressable>
                             ))}
@@ -151,7 +247,7 @@ export default function Practice() {
                     <Button
                         title="Start Practice"
                         onPress={startPractice}
-                        disabled={!categoryId}
+                        disabled={!skillId}
                         style={styles.startButton}
                     />
                 </ScrollView>
@@ -165,6 +261,9 @@ export default function Practice() {
                 <View style={styles.solvingContainer}>
                     {/* Header */}
                     <View style={styles.solvingHeader}>
+                        <Pressable onPress={handleQuit} style={styles.backButton}>
+                            <Ionicons name="close" size={24} color="#64748B" />
+                        </Pressable>
                         <Text style={styles.problemCounter}>
                             Problem {currentIndex + 1}/{problems.length}
                         </Text>
@@ -178,6 +277,20 @@ export default function Practice() {
                     <Card style={styles.problemCard}>
                         <Text style={styles.problemText}>{currentProblem.problem_text}</Text>
                         <MathRenderer latex={currentProblem.problem_latex} />
+
+                        {/* Answer Input */}
+                        <View style={styles.answerInputContainer}>
+                            <Text style={styles.answerLabel}>Your Answer:</Text>
+                            <TextInput
+                                style={styles.answerInput}
+                                value={userAnswer}
+                                onChangeText={setUserAnswer}
+                                placeholder="Enter your answer (e.g., x^3 + C)"
+                                placeholderTextColor="#94A3B8"
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                            />
+                        </View>
                     </Card>
 
                     {/* Controls */}
@@ -185,9 +298,10 @@ export default function Practice() {
                         {!showSolution ? (
                             <>
                                 <Button
-                                    title="Show Solution"
+                                    title="Submit Answer"
                                     onPress={() => setShowSolution(true)}
                                     style={styles.controlButton}
+                                    disabled={!userAnswer.trim()}
                                 />
                                 <Button
                                     title={`Hint (${hintsUsed})`}
@@ -197,6 +311,13 @@ export default function Practice() {
                             </>
                         ) : (
                             <View>
+                                <View style={styles.solutionBox}>
+                                    <Text style={styles.solutionLabel}>Correct Answer:</Text>
+                                    <MathRenderer
+                                        latex={JSON.parse(currentProblem.solution_steps)[0]?.latex || ""}
+                                        style={styles.solutionMath}
+                                    />
+                                </View>
                                 <Text style={styles.answerPrompt}>Did you get it right?</Text>
                                 <View style={styles.answerButtons}>
                                     <Button
@@ -212,11 +333,6 @@ export default function Practice() {
                                         onPress={() => handleAnswer(true)}
                                     />
                                 </View>
-                                <ScrollView style={styles.solutionScroll}>
-                                    <Text style={styles.solutionText}>
-                                        Solution: {JSON.parse(currentProblem.solution_steps)[0]?.latex || "..."}
-                                    </Text>
-                                </ScrollView>
                             </View>
                         )}
                     </View>
@@ -246,9 +362,18 @@ export default function Practice() {
                     </Card>
 
                     <Button
-                        title="Return Home"
-                        onPress={() => router.push("/(tabs)/index")}
+                        title="Practice Again"
+                        onPress={() => {
+                            setStage('config');
+                            setResults({ correct: 0, xp: 0 });
+                        }}
                         style={styles.returnButton}
+                    />
+                    <Button
+                        title="Return Home"
+                        variant="outline"
+                        onPress={() => router.push("/")}
+                        style={[styles.returnButton, { marginTop: 12 }]}
                     />
                 </View>
             </SafeAreaView>
@@ -300,6 +425,7 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         borderWidth: 1,
         borderColor: '#E2E8F0',
+        marginBottom: 8,
     },
     optionButtonActive: {
         backgroundColor: 'rgba(37, 99, 235, 0.1)',
@@ -349,6 +475,10 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 24,
+    },
+    backButton: {
+        padding: 8,
+        marginLeft: -8,
     },
     problemCounter: {
         color: '#64748B',
@@ -437,5 +567,40 @@ const styles = StyleSheet.create({
     },
     returnButton: {
         width: '100%',
+    },
+    answerInputContainer: {
+        marginTop: 20,
+        width: '100%',
+    },
+    answerLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#0F172A',
+        marginBottom: 8,
+    },
+    answerInput: {
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        borderRadius: 8,
+        padding: 12,
+        fontSize: 16,
+        color: '#0F172A',
+        backgroundColor: '#FFFFFF',
+    },
+    solutionBox: {
+        backgroundColor: '#F1F5F9',
+        padding: 16,
+        borderRadius: 8,
+        marginBottom: 16,
+    },
+    solutionLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#64748B',
+        marginBottom: 8,
+    },
+    solutionMath: {
+        height: 100,
+        marginTop: 8,
     },
 });

@@ -31,7 +31,7 @@ export interface CategoryProgress {
 export interface Problem {
     id: number;
     category_id: number;
-    difficulty: 'easy' | 'medium' | 'hard';
+    difficulty: 'easy' | 'medium' | 'hard' | 'EASY' | 'MEDIUM' | 'HARD';
     problem_text: string;
     problem_latex: string;
     solution_steps: string; // JSON string
