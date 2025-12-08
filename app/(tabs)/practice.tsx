@@ -7,8 +7,10 @@ import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Problem } from "../../src/models/types";
 import MathRenderer from "../../src/components/MathRenderer";
+import MathKeyboard from "../../src/components/MathKeyboard";
 import { PracticeService } from "../../src/services/PracticeService";
 import { QuestionGenerator } from "../../src/services/QuestionGenerator";
+import { AnswerValidator } from "../../src/services/AnswerValidator";
 import { useUserStore } from "../../store/useUserStore";
 
 type Stage = 'config' | 'solving' | 'summary';
@@ -40,8 +42,9 @@ export default function Practice() {
     const [timer, setTimer] = useState(0);
     const [isTimerRunning, setIsTimerRunning] = useState(false);
     const [showSolution, setShowSolution] = useState(false);
-    const [attemptsCount, setAttemptsCount] = useState(0);
+    const [attemptsCount, setAttemptsCount] = useState(1);
     const [userAnswer, setUserAnswer] = useState('');
+    const [answerFeedback, setAnswerFeedback] = useState<'none' | 'correct' | 'incorrect'>('none');
 
     const [results, setResults] = useState<{ correct: number, xp: number }>({ correct: 0, xp: 0 });
 
@@ -99,19 +102,50 @@ export default function Practice() {
         setHintsUsed(0);
         setAttemptsCount(1);
         setShowSolution(false);
+        setUserAnswer(''); // Fix: Reset answer box
+        setAnswerFeedback('none'); // Reset feedback
         setResults({ correct: 0, xp: 0 });
     };
 
-    const handleAnswer = async (correct: boolean) => {
-        setIsTimerRunning(false);
+    const handleSubmitAnswer = () => {
+        if (!currentProblem || !userAnswer.trim()) return;
+
+        const correctAnswer = JSON.parse(currentProblem.solution_steps)[0]?.latex || '';
+        const integrand = currentProblem.problem_latex; // Pass integrand for numeric verification
+
+        const result = AnswerValidator.validateAnswer(userAnswer, correctAnswer, integrand);
+
+        if (result.isCorrect) {
+            setAnswerFeedback('correct');
+            setShowSolution(true);
+        } else {
+            setAnswerFeedback('incorrect');
+            setAttemptsCount(prev => prev + 1);
+        }
+    };
+
+    const handleTryAgain = () => {
+        setAnswerFeedback('none');
+        // Keep the user's answer so they can modify it
+    };
+
+    const handleConcede = () => {
+        setAnswerFeedback('incorrect');
+        setShowSolution(true);
+    };
+
+    const handleContinue = async () => {
         if (!currentProblem || !skillId) return;
+        setIsTimerRunning(false);
+
+        const isCorrect = answerFeedback === 'correct';
 
         // Record Attempt
         const { xpEarned } = await PracticeService.recordAttempt(
             1, // Hardcoded User ID for now
             skillId,
-            difficulty, // Use selected difficulty (even if generator is easy, for now)
-            correct,
+            difficulty,
+            isCorrect,
             attemptsCount,
             hintsUsed,
             undefined, // templateId
@@ -120,11 +154,12 @@ export default function Practice() {
         );
 
         setResults(prev => ({
-            correct: prev.correct + (correct ? 1 : 0),
+            correct: prev.correct + (isCorrect ? 1 : 0),
             xp: prev.xp + xpEarned
         }));
 
         if (currentIndex < problems.length - 1) {
+            // Move to next problem
             const nextIndex = currentIndex + 1;
             setCurrentIndex(nextIndex);
             setCurrentProblem(problems[nextIndex]);
@@ -134,6 +169,7 @@ export default function Practice() {
             setAttemptsCount(1);
             setShowSolution(false);
             setUserAnswer('');
+            setAnswerFeedback('none');
         } else {
             // Finish Assignment
             const bonus = await PracticeService.applyAssignmentCompletionBonus(1, skillId, setSize);
@@ -159,6 +195,10 @@ export default function Practice() {
                 }
             ]
         );
+    };
+
+    const insertSymbol = (symbol: string) => {
+        setUserAnswer(prev => prev + symbol);
     };
 
     const formatTime = (seconds: number) => {
@@ -289,17 +329,19 @@ export default function Practice() {
                                 placeholderTextColor="#94A3B8"
                                 autoCapitalize="none"
                                 autoCorrect={false}
+                                multiline
                             />
+                            <MathKeyboard onInsert={insertSymbol} />
                         </View>
                     </Card>
 
                     {/* Controls */}
                     <View style={styles.controlsContainer}>
-                        {!showSolution ? (
+                        {answerFeedback === 'none' ? (
                             <>
                                 <Button
                                     title="Submit Answer"
-                                    onPress={() => setShowSolution(true)}
+                                    onPress={handleSubmitAnswer}
                                     style={styles.controlButton}
                                     disabled={!userAnswer.trim()}
                                 />
@@ -309,30 +351,66 @@ export default function Practice() {
                                     onPress={() => setHintsUsed(h => h + 1)}
                                 />
                             </>
+                        ) : answerFeedback === 'correct' ? (
+                            <View>
+                                <View style={styles.feedbackBox}>
+                                    <Ionicons name="checkmark-circle" size={48} color="#10B981" />
+                                    <Text style={styles.feedbackText}>Correct!</Text>
+                                </View>
+                                {showSolution && (
+                                    <View style={styles.solutionBox}>
+                                        <Text style={styles.solutionLabel}>Solution:</Text>
+                                        <MathRenderer
+                                            latex={JSON.parse(currentProblem.solution_steps)[0]?.latex || ""}
+                                            style={styles.solutionMath}
+                                        />
+                                    </View>
+                                )}
+                                <Button
+                                    title="Continue"
+                                    onPress={handleContinue}
+                                    style={styles.controlButton}
+                                />
+                            </View>
                         ) : (
                             <View>
-                                <View style={styles.solutionBox}>
-                                    <Text style={styles.solutionLabel}>Correct Answer:</Text>
-                                    <MathRenderer
-                                        latex={JSON.parse(currentProblem.solution_steps)[0]?.latex || ""}
-                                        style={styles.solutionMath}
-                                    />
+                                <View style={styles.feedbackBox}>
+                                    <Ionicons name="close-circle" size={48} color="#EF4444" />
+                                    <Text style={[styles.feedbackText, { color: '#EF4444' }]}>
+                                        {showSolution ? 'Incorrect' : 'Try again!'}
+                                    </Text>
                                 </View>
-                                <Text style={styles.answerPrompt}>Did you get it right?</Text>
-                                <View style={styles.answerButtons}>
+                                {showSolution && (
+                                    <View style={styles.solutionBox}>
+                                        <Text style={styles.solutionLabel}>Correct Answer:</Text>
+                                        <MathRenderer
+                                            latex={JSON.parse(currentProblem.solution_steps)[0]?.latex || ""}
+                                            style={styles.solutionMath}
+                                        />
+                                    </View>
+                                )}
+                                {!showSolution ? (
+                                    <View style={styles.answerButtons}>
+                                        <Button
+                                            title="Try Again"
+                                            variant="outline"
+                                            style={[styles.answerButton, { borderColor: '#3B82F6' }]}
+                                            onPress={handleTryAgain}
+                                        />
+                                        <Button
+                                            title="Concede"
+                                            variant="outline"
+                                            style={[styles.answerButton, { borderColor: '#EF4444' }]}
+                                            onPress={handleConcede}
+                                        />
+                                    </View>
+                                ) : (
                                     <Button
-                                        title="No"
-                                        variant="outline"
-                                        style={[styles.answerButton, { borderColor: '#EF4444' }]}
-                                        onPress={() => handleAnswer(false)}
+                                        title="Continue"
+                                        onPress={handleContinue}
+                                        style={styles.controlButton}
                                     />
-                                    <Button
-                                        title="Yes"
-                                        variant="outline"
-                                        style={[styles.answerButton, { borderColor: '#10B981' }]}
-                                        onPress={() => handleAnswer(true)}
-                                    />
-                                </View>
+                                )}
                             </View>
                         )}
                     </View>
@@ -601,6 +679,17 @@ const styles = StyleSheet.create({
     },
     solutionMath: {
         height: 100,
+        marginTop: 8,
+    },
+    feedbackBox: {
+        alignItems: 'center',
+        paddingVertical: 20,
+        marginBottom: 16,
+    },
+    feedbackText: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#10B981',
         marginTop: 8,
     },
 });
